@@ -1,193 +1,76 @@
-# Enhanced Self-Optimizing Linux System Tutorial
+#!/bin/bash
+set -euo pipefail
 
-> **Key Point**: I'll explain how to create a permanently optimized system that continuously monitors and adjusts itself while maintaining system safety. Let's break this down into easy-to-follow steps.
+### CONFIG ###
+RAMDISK_DIR="/mnt/ramdisk"
+SCRIPT_DIR="/opt/ramdisk-script"
+SCRIPT_NAME="myscript.sh"
+RAM_SIZE="256M"  # Safe for 4GB RAM
+SERVICE_NAME="ramdisk-runner"
 
-## 1. Understanding the Core Components 🔍
+echo "[*] Starting one-time setup..."
 
-### Base Requirements
-- RAM: 11.5GB (your system)
-- Storage: 1TB HDD with 700GB free
-- Operating System: BlackArch Linux (recommended for your needs)
+# ✅ 1. Create persistent storage for the script
+echo "[*] Creating persistent script location..."
+sudo mkdir -p "$SCRIPT_DIR"
 
-### System Resource Allocation
-```
-Available RAM: 11.5GB
-├── System Reserved: 2.0GB
-├── VM Allocation: 4.5GB
-└── RAMDisk: 5.0GB
-```
+# ✅ 2. Create the user script to be run from RAM
+cat <<'EOL' | sudo tee "$SCRIPT_DIR/$SCRIPT_NAME" > /dev/null
+#!/bin/bash
+set -euo pipefail
+echo "[+] Running from RAM disk at $(date)"
+# Add your logic below (example)
+echo "[+] Performing high-speed operation..."
+sleep 2
+echo "[+] Done. This was fast and clean."
+EOL
 
-## 2. Enhanced Script Components 📝
+sudo chmod +x "$SCRIPT_DIR/$SCRIPT_NAME"
 
-Let's break down the key components of the self-optimizing system:
+# ✅ 3. Create launcher that sets up RAM disk and runs your script
+cat <<EOF | sudo tee "$SCRIPT_DIR/ramdisk-launcher.sh" > /dev/null
+#!/bin/bash
+set -euo pipefail
 
-### A. Monitoring System
-```bash
-# Add to your original script
-MONITOR_INTERVAL=180  # Check every 3 minutes
-SAFETY_THRESHOLDS=(
-    CPU_MAX=90
-    MEM_MAX=85
-    DISK_MAX=90
-)
+RAMDISK_DIR="$RAMDISK_DIR"
+SCRIPT_NAME="$SCRIPT_NAME"
 
-monitor_system() {
-    while true; do
-        # Get current usage
-        CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}')
-        MEM_USAGE=$(free | grep Mem | awk '{print $3/$2 * 100}')
-        
-        # Log metrics
-        echo "$(date) - CPU: ${CPU_USAGE}% MEM: ${MEM_USAGE}%" >> "$LOG_FILE"
-        
-        # Check thresholds
-        check_thresholds
-        
-        sleep $MONITOR_INTERVAL
-    done
-}
-```
+echo "[*] Mounting RAM disk at \$RAMDISK_DIR..."
+mkdir -p "\$RAMDISK_DIR"
+if ! mountpoint -q "\$RAMDISK_DIR"; then
+    mount -t tmpfs -o size=$RAM_SIZE tmpfs "\$RAMDISK_DIR"
+fi
 
-### B. Self-Optimization Logic
-```bash
-optimize_system() {
-    # Dynamic RAM allocation
-    TOTAL_RAM=$(free -g | awk '/^Mem:/{print $2}')
-    RAMDISK_SIZE=$(($TOTAL_RAM * 43 / 100))  # 43% of total RAM
-    
-    # Optimize system parameters
-    sysctl -w vm.swappiness=5
-    sysctl -w vm.vfs_cache_pressure=40
-    sysctl -w vm.dirty_ratio=15
-    
-    # Optimize I/O scheduler
-    for disk in /sys/block/sd*/queue/scheduler; do
-        echo "deadline" > "$disk"
-    done
-}
-```
+echo "[*] Copying script to RAM disk..."
+cp "$SCRIPT_DIR/\$SCRIPT_NAME" "\$RAMDISK_DIR/\$SCRIPT_NAME"
+chmod +x "\$RAMDISK_DIR/\$SCRIPT_NAME"
 
-## 3. Step-by-Step Implementation Guide 📚
+echo "[*] Executing script from RAM..."
+"\$RAMDISK_DIR/\$SCRIPT_NAME"
+EOF
 
-### Step 1: Install Base System
-```bash
-# Install BlackArch with minimal XFCE
-sudo pacman -Syu  # Update system
-sudo pacman -S xfce4 xfce4-goodies  # Install minimal desktop
+sudo chmod +x "$SCRIPT_DIR/ramdisk-launcher.sh"
 
-# Install monitoring tools
-sudo pacman -S htop iotop sysstat
-```
-
-### Step 2: Configure RAMDisk
-```bash
-# Create mount points
-sudo mkdir -p /mnt/ramdisk
-sudo mkdir -p /opt/ramdisk_backups
-
-# Add to /etc/fstab
-echo "tmpfs /mnt/ramdisk tmpfs size=43%,noatime,nodiratime 0 0" | sudo tee -a /etc/fstab
-```
-
-### Step 3: Setup Monitoring Service
-```bash
-# Create service file
-sudo cat > /etc/systemd/system/system-optimizer.service << EOL
+# ✅ 4. Create a systemd service that runs the launcher at boot
+echo "[*] Setting up systemd service..."
+cat <<EOF | sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null
 [Unit]
-Description=System Optimizer Service
-After=network.target
+Description=Run script from RAM disk at boot
+After=multi-user.target
 
 [Service]
-ExecStart=/usr/local/bin/system-optimizer.sh
-Restart=always
-RestartSec=30
+Type=oneshot
+ExecStart=$SCRIPT_DIR/ramdisk-launcher.sh
+RemainAfterExit=false
 
 [Install]
 WantedBy=multi-user.target
-EOL
-```
+EOF
 
-## 4. Safety Features 🛡️
+# ✅ 5. Enable the service
+echo "[*] Enabling service..."
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl enable "${SERVICE_NAME}.service"
 
-The script includes multiple safety mechanisms:
-
-1. **Threshold Monitoring**:
-```bash
-check_thresholds() {
-    if [ "$CPU_USAGE" -gt "${SAFETY_THRESHOLDS[CPU_MAX]}" ]; then
-        log "WARNING: High CPU usage detected"
-        take_corrective_action "cpu"
-    fi
-}
-```
-
-2. **Automatic Recovery**:
-```bash
-take_corrective_action() {
-    case "$1" in
-        cpu)
-            # Find and nice high CPU processes
-            top -bn1 | head -n 12 | tail -n 5 | awk '{print $1}' | xargs -I {} renice +10 {}
-            ;;
-    esac
-}
-```
-
-## 5. Monitoring Dashboard 📊
-
-Create a simple monitoring interface:
-```bash
-watch -n 5 '
-echo "=== System Status ==="
-echo "CPU Usage: $(top -bn1 | grep "Cpu(s)" | awk "{print \$2}")%"
-echo "Memory Usage: $(free -m | awk "/^Mem:/ {print \$3/\$2 * 100}")%"
-echo "RAMDisk Usage: $(df -h /mnt/ramdisk | tail -n 1 | awk "{print \$5}")"
-'
-```
-
-## 6. Maintenance and Troubleshooting 🔧
-
-### Regular Maintenance Tasks
-```bash
-# Add to crontab
-0 3 * * * /usr/local/bin/system-optimizer.sh cleanup
-0 * * * * /usr/local/bin/system-optimizer.sh check
-```
-
-### Troubleshooting Commands
-```bash
-# Check system logs
-journalctl -u system-optimizer -f
-
-# View resource usage
-htop
-iotop
-vmstat 1
-```
-
-> **Safety Tip**: The script includes automatic rollback if any optimization causes system instability:
-```bash
-if [ "$CPU_USAGE" -gt 95 ] || [ "$MEM_USAGE" -gt 95 ]; then
-    restore_safe_settings
-    log "ALERT: System restored to safe settings"
-fi
-```
-
-## 7. Performance Monitoring 📈
-
-The system continuously monitors:
-- CPU usage and trends
-- Memory utilization
-- Disk I/O performance
-- System temperature
-- Process priorities
-
-## 8. Implementation Verification ✅
-
-After setup, verify proper operation:
-1. Check system logs: `tail -f /var/log/ramdisk.log`
-2. Monitor resource usage: `htop`
-3. Verify RAMDisk performance: `dd if=/dev/zero of=/mnt/ramdisk/test bs=1M count=1024`
-
-This enhanced system will continuously optimize itself while maintaining stability and safety.
-The script includes multiple safeguards to prevent system compromise while ensuring optimal performance for your penetration testing activities.
+echo "[✔] All done. Reboot to test RAM disk boot script."
