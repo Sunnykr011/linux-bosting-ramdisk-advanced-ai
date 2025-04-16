@@ -1,6 +1,8 @@
+
+
 ---
 
-##  **Optimized RAM Disk Script (v2)** — Copy-paste aur phaad de system ko speed mein
+## 🔧 **Optimized RAM Disk Script (v2)** — Copy-paste aur phaad de system ko speed mein
 
 ```bash
 #!/bin/bash
@@ -31,7 +33,7 @@ EOL
 
 sudo chmod +x "$SCRIPT_DIR/$SCRIPT_NAME"
 
-#  3. Create launcher that sets up RAM disk and runs the script
+# ✅ 3. Create launcher that sets up RAM disk and runs the script
 cat <<EOF | sudo tee "$SCRIPT_DIR/ramdisk-launcher.sh" > /dev/null
 #!/bin/bash
 set -euo pipefail
@@ -42,11 +44,11 @@ SCRIPT_NAME="$SCRIPT_NAME"
 echo "[*] Preparing RAM disk..."
 mkdir -p "\$RAMDISK_DIR"
 
-#  Clean up old contents
+# 🧼 Clean up old contents
 echo "[*] Cleaning RAM disk..."
 rm -rf "\$RAMDISK_DIR"/*
 
-#  Mount with performance flags
+# ✅ Mount with performance flags
 if ! mountpoint -q "\$RAMDISK_DIR"; then
     mount -t tmpfs -o size=$RAM_SIZE,noatime,nodiratime tmpfs "\$RAMDISK_DIR"
 fi
@@ -61,7 +63,7 @@ EOF
 
 sudo chmod +x "$SCRIPT_DIR/ramdisk-launcher.sh"
 
-#  4. Create systemd service to run at boot
+# ✅ 4. Create systemd service to run at boot
 echo "[*] Creating systemd service..."
 cat <<EOF | sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null
 [Unit]
@@ -78,7 +80,7 @@ RemainAfterExit=false
 WantedBy=multi-user.target
 EOF
 
-#  5. Enable the service
+# ✅ 5. Enable the service
 echo "[*] Enabling service..."
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
@@ -89,7 +91,7 @@ echo "[✔] Setup complete. Reboot to test!"
 
 ---
 
-##  Optional: RAM Disk Watchdog Script (Prevent RAM overflow)
+## 💡 Optional: RAM Disk Watchdog Script (Prevent RAM overflow)
 
 If you want to add the optional RAM disk **watchdog**, drop this into `/opt/ramdisk-script/ramdisk-watchdog.sh`:
 
@@ -113,7 +115,7 @@ echo "*/5 * * * * root /opt/ramdisk-script/ramdisk-watchdog.sh" | sudo tee /etc/
 
 ---
 
-###  Final Thoughts:
+### ⚡ Final Thoughts:
 - Speed gain = noticeable, especially for I/O-heavy scripts  
-- Stability =  with systemd deps fixed  
-- Maintainability =  with cleanup + watchdog  
+- Stability = ✅ with systemd deps fixed  
+- Maintainability = ✅ with cleanup + watchdog  
