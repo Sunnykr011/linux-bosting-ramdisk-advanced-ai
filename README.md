@@ -1,36 +1,119 @@
+---
 
+## 🔧 **Optimized RAM Disk Script (v2)** — Copy-paste aur phaad de system ko speed mein
 
-## ✅ HOW TO USE
-
-1. Save it:
 ```bash
-nano fast_ram_bootstrap.sh
-```
+#!/bin/bash
+set -euo pipefail
 
-2. Paste the script above and save (`CTRL + O`, `CTRL + X`)
+### CONFIG ###
+RAMDISK_DIR="/mnt/ramdisk"
+SCRIPT_DIR="/opt/ramdisk-script"
+SCRIPT_NAME="myscript.sh"
+RAM_SIZE="256M"
+SERVICE_NAME="ramdisk-runner"
 
-3. Run it:
-```bash
-chmod +x fast_ram_bootstrap.sh
-./fast_ram_bootstrap.sh
-```
+echo "[*] Starting optimized setup..."
 
-4. Then reboot:
-```bash
-sudo reboot
+# ✅ 1. Create persistent storage for the script
+echo "[*] Creating script directory..."
+sudo mkdir -p "$SCRIPT_DIR"
+
+# ✅ 2. Create the user script to run from RAM
+cat <<'EOL' | sudo tee "$SCRIPT_DIR/$SCRIPT_NAME" > /dev/null
+#!/bin/bash
+set -euo pipefail
+echo "[+] Running from RAM disk at $(date)"
+# Add your custom logic here
+dd if=/dev/zero of=/mnt/ramdisk/speedtest bs=1M count=100 conv=fdatasync
+echo "[+] Done with high-speed operation."
+EOL
+
+sudo chmod +x "$SCRIPT_DIR/$SCRIPT_NAME"
+
+# ✅ 3. Create launcher that sets up RAM disk and runs the script
+cat <<EOF | sudo tee "$SCRIPT_DIR/ramdisk-launcher.sh" > /dev/null
+#!/bin/bash
+set -euo pipefail
+
+RAMDISK_DIR="$RAMDISK_DIR"
+SCRIPT_NAME="$SCRIPT_NAME"
+
+echo "[*] Preparing RAM disk..."
+mkdir -p "\$RAMDISK_DIR"
+
+# 🧼 Clean up old contents
+echo "[*] Cleaning RAM disk..."
+rm -rf "\$RAMDISK_DIR"/*
+
+# ✅ Mount with performance flags
+if ! mountpoint -q "\$RAMDISK_DIR"; then
+    mount -t tmpfs -o size=$RAM_SIZE,noatime,nodiratime tmpfs "\$RAMDISK_DIR"
+fi
+
+echo "[*] Copying script to RAM disk..."
+cp "$SCRIPT_DIR/\$SCRIPT_NAME" "\$RAMDISK_DIR/\$SCRIPT_NAME"
+chmod +x "\$RAMDISK_DIR/\$SCRIPT_NAME"
+
+echo "[*] Running script from RAM..."
+"\$RAMDISK_DIR/\$SCRIPT_NAME"
+EOF
+
+sudo chmod +x "$SCRIPT_DIR/ramdisk-launcher.sh"
+
+# ✅ 4. Create systemd service to run at boot
+echo "[*] Creating systemd service..."
+cat <<EOF | sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null
+[Unit]
+Description=Run script from RAM disk at boot
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$SCRIPT_DIR/ramdisk-launcher.sh
+RemainAfterExit=false
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ✅ 5. Enable the service
+echo "[*] Enabling service..."
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl enable "${SERVICE_NAME}.service"
+
+echo "[✔] Setup complete. Reboot to test!"
 ```
 
 ---
 
-## 🚀 What Happens After Reboot?
+## 💡 Optional: RAM Disk Watchdog Script (Prevent RAM overflow)
 
-1. On every boot:
-   - RAM disk (`/mnt/ramdisk`) is mounted
-   - Script from `/opt/ramdisk-script` is copied into RAM
-   - Executed from RAM directly (super fast)
+If you want to add the optional RAM disk **watchdog**, drop this into `/opt/ramdisk-script/ramdisk-watchdog.sh`:
 
-2. Output:
 ```bash
-[+] Running from RAM disk at ...
-[+] Performing high-speed operation...
-[+] Done. This was fast and clean.
+#!/bin/bash
+RAMDISK_DIR="/mnt/ramdisk"
+LIMIT_MB=200
+
+used=$(du -sm "$RAMDISK_DIR" | cut -f1)
+if [ "$used" -gt "$LIMIT_MB" ]; then
+  echo "[!] RAM disk usage high: $used MB. Flushing."
+  rm -rf "$RAMDISK_DIR"/*
+fi
+```
+
+Then you can hook it up with cron like:
+
+```bash
+echo "*/5 * * * * root /opt/ramdisk-script/ramdisk-watchdog.sh" | sudo tee /etc/cron.d/ramdisk-watchdog
+```
+
+---
+
+### ⚡ Final Thoughts:
+- Speed gain = noticeable, especially for I/O-heavy scripts  
+- Stability = ✅ with systemd deps fixed  
+- Maintainability = ✅ with cleanup + watchdog  
