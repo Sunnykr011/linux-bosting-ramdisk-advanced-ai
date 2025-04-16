@@ -1,6 +1,6 @@
 ---
 
-## 🔧 **Optimized RAM Disk Script (v2)** — Copy-paste aur phaad de system ko speed mein
+##  **Optimized RAM Disk Script (v2)** — Copy-paste aur phaad de system ko speed mein
 
 ```bash
 #!/bin/bash
